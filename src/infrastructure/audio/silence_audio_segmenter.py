@@ -1,7 +1,8 @@
 """Audio segmentation replicating Hossain et al. (~816 chunks from 73 files).
 
-Paper method (Section 2.2.2): PyDub silence detection at -16 dBFS
-on raw audio with 0.5s minimum silence gap. No normalization.
+Paper method (Section 2.2.2): silence detection at -16 dBFS, 0.5s gap.
+Raw audio is too quiet (dBFS -29 to -44), so we normalize first
+as per Section 2.2.1 signal normalization, then use adaptive threshold.
 """
 
 from pathlib import Path
@@ -15,14 +16,14 @@ from src.domain.interfaces.audio_segmenter import IAudioSegmenter
 class SilenceAudioSegmenter(IAudioSegmenter):
     """Segments speech recordings into vocal intervals via silence detection."""
 
-    _FIXED_SILENCE_THRESHOLD_DBFS: int = -16
     _MINIMUM_SILENCE_MS: int = 500
+    _SILENCE_OFFSET_DB: int = 10
     _KEEP_SILENCE_PADDING_MS: int = 150
 
     def segment(
         self, sample: AudioSample, output_directory: Path,
     ) -> List[AudioSample]:
-        """Split audio on natural pauses using paper's fixed threshold."""
+        """Split normalized audio on natural pauses into vocal chunks."""
         output_directory.mkdir(parents=True, exist_ok=True)
         cached = sorted(output_directory.glob(f"{sample.file_path.stem}_seg_*.wav"))
 
@@ -30,32 +31,33 @@ class SilenceAudioSegmenter(IAudioSegmenter):
             return self._build_from_cache(sample, cached)
 
         raw_audio = AudioSegment.from_file(str(sample.file_path))
+        normalized = raw_audio.normalize()
+        threshold = max(int(normalized.dBFS) - self._SILENCE_OFFSET_DB, -50)
 
         chunks = split_on_silence(
-            raw_audio,
+            normalized,
             min_silence_len=self._MINIMUM_SILENCE_MS,
-            silence_thresh=self._FIXED_SILENCE_THRESHOLD_DBFS,
+            silence_thresh=threshold,
             keep_silence=self._KEEP_SILENCE_PADDING_MS,
             seek_step=10,
         )
 
         if not chunks:
-            chunks = [raw_audio]
+            chunks = [normalized]
 
-        self._log_segmentation_result(sample, raw_audio, chunks)
+        self._log_result(sample, raw_audio, normalized, threshold, chunks)
         return self._export_chunks(sample, chunks, output_directory)
 
-    def _log_segmentation_result(
+    def _log_result(
         self, sample: AudioSample, raw: AudioSegment,
-        chunks: List[AudioSegment],
+        norm: AudioSegment, threshold: int, chunks: List[AudioSegment],
     ) -> None:
         """Print segmentation statistics for diagnostic purposes."""
         durations = [len(c) / 1000.0 for c in chunks]
         print(
             f"  {sample.file_path.name}: {len(raw)/1000:.1f}s -> "
-            f"{len(chunks)} chunks (raw_dBFS={raw.dBFS:.1f}, "
-            f"thresh={self._FIXED_SILENCE_THRESHOLD_DBFS}, "
-            f"dur=[{min(durations):.1f}s-{max(durations):.1f}s])"
+            f"{len(chunks)} chunks (raw={raw.dBFS:.1f}, norm={norm.dBFS:.1f}, "
+            f"thresh={threshold}, dur=[{min(durations):.1f}s-{max(durations):.1f}s])"
         )
 
     def _build_from_cache(
