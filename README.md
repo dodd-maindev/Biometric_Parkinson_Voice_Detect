@@ -27,8 +27,8 @@ src/
 ```bash
 !mkdir -p data/raw/mdvr_kcl
 # Download directly from Zenodo (Record 2867216)
-!wget -O data/raw/mdvr_kcl.zip https://zenodo.org/records/2867216/files/MDVR_KCL.zip?download=1
-!unzip -q data/raw/mdvr_kcl.zip -d data/raw/mdvr_kcl/
+!wget -O data/raw/mdvr_kcl/26_29_09_2017_KCL.zip "https://zenodo.org/records/2867216/files/26_29_09_2017_KCL.zip?download=1"
+!unzip -q data/raw/mdvr_kcl/26_29_09_2017_KCL.zip -d data/raw/mdvr_kcl/
 ```
 
 ### 3. Run Experiments
