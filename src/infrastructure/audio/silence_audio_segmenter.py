@@ -12,7 +12,7 @@ class SilenceAudioSegmenter(IAudioSegmenter):
     """Segments speech recordings into vocal intervals via silence detection."""
 
     _MINIMUM_SILENCE_MS: int = 500
-    _SILENCE_THRESHOLD_DBFS: int = -16
+    _SILENCE_OFFSET_DB: int = 10
     _KEEP_SILENCE_PADDING_MS: int = 150
     _MIN_CHUNK_DURATION_MS: int = 2000
 
@@ -28,11 +28,12 @@ class SilenceAudioSegmenter(IAudioSegmenter):
 
         raw_audio = AudioSegment.from_file(str(sample.file_path))
         normalized = raw_audio.normalize()
+        threshold = max(int(normalized.dBFS) - self._SILENCE_OFFSET_DB, -50)
 
         chunks = split_on_silence(
             normalized,
             min_silence_len=self._MINIMUM_SILENCE_MS,
-            silence_thresh=self._SILENCE_THRESHOLD_DBFS,
+            silence_thresh=threshold,
             keep_silence=self._KEEP_SILENCE_PADDING_MS,
             seek_step=10,
         )
@@ -45,7 +46,7 @@ class SilenceAudioSegmenter(IAudioSegmenter):
         print(
             f"  {sample.file_path.name}: {len(raw_audio)/1000:.1f}s -> "
             f"{len(valid)} chunks (dBFS={normalized.dBFS:.1f}, "
-            f"dur=[{min(durations):.1f}s-{max(durations):.1f}s])"
+            f"thresh={threshold}, dur=[{min(durations):.1f}s-{max(durations):.1f}s])"
         )
 
         return self._export_chunks(sample, valid, output_directory)
