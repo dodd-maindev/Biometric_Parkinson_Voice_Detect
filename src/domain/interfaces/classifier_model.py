@@ -1,7 +1,7 @@
 """Interface for classification models."""
 
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import List, Optional
 import numpy as np
 
 
@@ -9,12 +9,18 @@ class IClassifierModel(ABC):
     """Abstract contract for binary classification models."""
 
     @abstractmethod
-    def fit(self, features: np.ndarray, labels: np.ndarray) -> None:
+    def fit(
+        self,
+        features: np.ndarray,
+        labels: np.ndarray,
+        subject_groups: Optional[List[str]] = None,
+    ) -> None:
         """Fit the model to training features and ground truth labels.
 
         Args:
             features: 2D array of shape (number_of_samples, number_of_features).
-            labels: 1D array of shape (number_of_samples,) with binary integer labels.
+            labels: 1D array of shape (number_of_samples,) with binary labels.
+            subject_groups: Optional subject IDs for group-aware cross-validation.
         """
         pass
 

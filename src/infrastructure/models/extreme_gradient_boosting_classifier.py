@@ -30,7 +30,12 @@ class ExtremeGradientBoostingClassifier(IClassifierModel):
         )
         self._is_fitted: bool = False
 
-    def fit(self, features: np.ndarray, labels: np.ndarray) -> None:
+    def fit(
+        self,
+        features: np.ndarray,
+        labels: np.ndarray,
+        subject_groups=None,
+    ) -> None:
         """Standardize inputs and fit the gradient boosted tree ensemble."""
         scaled_features = self._scaler.fit_transform(features)
         self._classifier.fit(scaled_features, labels)

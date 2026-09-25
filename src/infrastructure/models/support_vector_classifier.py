@@ -1,15 +1,15 @@
 """Support Vector Machine with standardization, balanced weights, and tuning."""
 
-from typing import Optional
+from typing import List, Optional
 import numpy as np
-from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import GridSearchCV, GroupKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from src.domain.interfaces.classifier_model import IClassifierModel
 
 
 class SupportVectorClassifier(IClassifierModel):
-    """Encapsulates SVC with class balancing and optional GridSearchCV."""
+    """Encapsulates SVC with class balancing and subject-aware GridSearchCV."""
 
     _PARAMETER_GRID = {
         "C": [0.1, 1.0, 10.0, 50.0, 100.0],
@@ -33,35 +33,45 @@ class SupportVectorClassifier(IClassifierModel):
         self._gamma = gamma_parameter
         self._classifier: Optional[SVC] = None
 
-    def fit(self, features: np.ndarray, labels: np.ndarray) -> None:
-        """Standardize features and fit the SVM with balanced class weights."""
-        scaled_features = self._scaler.fit_transform(features)
+    def fit(
+        self,
+        features: np.ndarray,
+        labels: np.ndarray,
+        subject_groups: Optional[List[str]] = None,
+    ) -> None:
+        """Standardize features and fit SVM with balanced class weights."""
+        scaled = self._scaler.fit_transform(features)
         pd_count = int(np.sum(labels == 1))
         hc_count = int(np.sum(labels == 0))
         print(f"    SVM fit: {len(labels)} samples (PD={pd_count}, HC={hc_count})")
 
         if self._enable_grid_search and len(labels) >= 50:
-            self._fit_with_grid_search(scaled_features, labels)
+            self._fit_with_grid_search(scaled, labels, subject_groups)
         else:
-            self._fit_default(scaled_features, labels)
+            self._fit_default(scaled, labels)
 
-    def _fit_with_grid_search(self, features: np.ndarray, labels: np.ndarray) -> None:
-        """Perform grid search cross-validation and log best parameters."""
+    def _fit_with_grid_search(
+        self, features: np.ndarray, labels: np.ndarray,
+        groups: Optional[List[str]] = None,
+    ) -> None:
+        """Grid search with subject-aware GroupKFold to prevent data leakage."""
+        cv_strategy = GroupKFold(n_splits=5) if groups else 5
         grid = GridSearchCV(
             SVC(
                 kernel=self._kernel, probability=True,
                 class_weight="balanced", random_state=self._seed,
             ),
             param_grid=self._PARAMETER_GRID,
-            cv=5, scoring="f1", n_jobs=-1,
+            cv=cv_strategy, scoring="f1", n_jobs=-1,
         )
-        grid.fit(features, labels)
+        fit_params = {"groups": groups} if groups else {}
+        grid.fit(features, labels, **fit_params)
         self._classifier = grid.best_estimator_
         print(f"    GridSearchCV best params: {grid.best_params_}")
         print(f"    GridSearchCV best F1 (CV): {grid.best_score_:.4f}")
 
     def _fit_default(self, features: np.ndarray, labels: np.ndarray) -> None:
-        """Fit with default hyperparameters when grid search is disabled."""
+        """Fit with default hyperparameters."""
         self._classifier = SVC(
             C=self._default_c, kernel=self._kernel, gamma=self._gamma,
             probability=True, class_weight="balanced", random_state=self._seed,

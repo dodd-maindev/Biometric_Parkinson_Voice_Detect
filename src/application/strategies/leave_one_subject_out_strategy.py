@@ -46,7 +46,8 @@ class LeaveOneSubjectOutStrategy(IValidationStrategy):
             held_out_subject = subject_groups[test_idx[0]]
             held_out_label = "PD" if labels[test_idx[0]] == 1 else "HC"
 
-            classifier.fit(features[train_idx], labels[train_idx])
+            train_groups = [subject_groups[i] for i in train_idx]
+            classifier.fit(features[train_idx], labels[train_idx], subject_groups=train_groups)
             fold_preds = classifier.predict(features[test_idx])
             fold_probs = classifier.predict_probability(features[test_idx])
 
