@@ -20,11 +20,13 @@ class SilenceAudioSegmenter(IAudioSegmenter):
         minimum_silence_milliseconds: int = 500,
         silence_threshold_dbfs: int = -16,
         keep_silence_padding_milliseconds: int = 100,
+        seek_step_milliseconds: int = 10,
     ) -> None:
-        """Initialize silence threshold parameters."""
+        """Initialize silence threshold and search step parameters."""
         self._minimum_silence_ms = minimum_silence_milliseconds
         self._silence_threshold_dbfs = silence_threshold_dbfs
         self._padding_ms = keep_silence_padding_milliseconds
+        self._seek_step_ms = seek_step_milliseconds
 
     def segment(
         self,
@@ -33,17 +35,32 @@ class SilenceAudioSegmenter(IAudioSegmenter):
     ) -> List[AudioSample]:
         """Split audio file on detected silences and save generated audio chunks."""
         output_directory.mkdir(parents=True, exist_ok=True)
+
+        # Check existing cached chunks to avoid redundant processing
+        existing_chunks = sorted(output_directory.glob(f"{sample.file_path.stem}_seg_*.wav"))
+        if existing_chunks:
+            return [
+                AudioSample(
+                    subject_id=sample.subject_id,
+                    file_path=chunk_file,
+                    is_parkinson=sample.is_parkinson,
+                    task_type=sample.task_type,
+                    segment_index=idx,
+                )
+                for idx, chunk_file in enumerate(existing_chunks)
+            ]
+
         raw_audio = AudioSegment.from_file(str(sample.file_path))
         chunks = split_on_silence(
             raw_audio,
             min_silence_len=self._minimum_silence_ms,
             silence_thresh=self._silence_threshold_dbfs,
             keep_silence=self._padding_ms,
+            seek_step=self._seek_step_ms,
         )
 
         segmented_samples: List[AudioSample] = []
         for index, chunk in enumerate(chunks):
-            # Skip chunks shorter than 300 milliseconds to avoid pure clicks
             if len(chunk) < 300:
                 continue
 

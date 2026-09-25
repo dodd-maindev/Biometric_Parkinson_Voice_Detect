@@ -2,6 +2,7 @@
 
 from pathlib import Path
 from typing import List, Optional
+from tqdm import tqdm
 from src.application.services.feature_extraction_service import (
     FeatureExtractionService,
 )
@@ -46,13 +47,15 @@ class BaselineReplicationPipeline:
         processed_samples: List[AudioSample] = []
 
         if use_segmentation:
-            for sample in raw_samples:
+            print(f"Segmenting {len(raw_samples)} audio files based on silence detection...")
+            for sample in tqdm(raw_samples, desc="Segmenting speech audio"):
                 chunks = self._segmenter.segment(sample, self._cache_dir)
                 processed_samples.extend(chunks if len(chunks) > 0 else [sample])
+            print(f"Generated {len(processed_samples)} vocal chunks from {len(raw_samples)} files.")
         else:
             processed_samples = raw_samples
 
-        # Extract Acoustic + GTCC features (best combination for Read-Text in paper: 95.45%)
+        print(f"Extracting 50 acoustic & cepstral features for {len(processed_samples)} segments...")
         extractors = [
             PraatAcousticExtractor(),
             GammatoneCepstralExtractor(number_of_coefficients=13),
@@ -61,6 +64,7 @@ class BaselineReplicationPipeline:
         service = FeatureExtractionService(extractors)
         features, labels, _ = service.extract_dataset(processed_samples)
 
+        print(f"Running Leave-One-Subject-Out Cross-Validation (LOSOCV) with SVM...")
         classifier = SupportVectorClassifier(c_regularization=1.0, kernel_type="rbf")
         metrics = self._validator.evaluate(classifier, features, labels, processed_samples)
         return metrics
