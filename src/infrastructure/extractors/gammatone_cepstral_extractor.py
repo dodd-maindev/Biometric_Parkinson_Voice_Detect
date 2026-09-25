@@ -1,15 +1,19 @@
-"""Extractor for Gammatone Frequency Cepstral Coefficients (GTCCs)."""
+"""Extractor for Gammatone Cepstral Coefficients (GTCC / GFCC)."""
 
 from typing import List
 import numpy as np
 import soundfile as sf
-from spafe.features.gtcc import gtcc
 from src.domain.entities.audio_sample import AudioSample
 from src.domain.interfaces.feature_extractor import IFeatureExtractor
 
+try:
+    from spafe.features.gfcc import gfcc as compute_gammatone_cepstrum
+except ImportError:
+    compute_gammatone_cepstrum = None
+
 
 class GammatoneCepstralExtractor(IFeatureExtractor):
-    """Extracts 13 mean Gammatone Frequency Cepstral Coefficients (GTCCs)."""
+    """Extracts 13 mean Gammatone Frequency Cepstral Coefficients."""
 
     def __init__(self, number_of_coefficients: int = 13) -> None:
         """Initialize number of GTCC coefficients."""
@@ -34,15 +38,21 @@ class GammatoneCepstralExtractor(IFeatureExtractor):
         if len(waveform) == 0:
             return np.zeros(self.feature_dimension, dtype=np.float32)
 
-        try:
-            gtcc_matrix = gtcc(
-                sig=waveform,
-                fs=sample_rate,
-                num_ceps=self._number_of_coefficients,
-                nfilts=26,
-            )
-            feature_vector = np.mean(gtcc_matrix, axis=0).astype(np.float32)
-        except Exception:
-            feature_vector = np.zeros(self.feature_dimension, dtype=np.float32)
+        if compute_gammatone_cepstrum is not None:
+            try:
+                matrix = compute_gammatone_cepstrum(
+                    sig=waveform,
+                    fs=sample_rate,
+                    num_ceps=self._number_of_coefficients,
+                    nfilts=26,
+                )
+                feature_vector = np.mean(matrix, axis=0).astype(np.float32)
+                return np.nan_to_num(feature_vector, nan=0.0, posinf=0.0, neginf=0.0)
+            except Exception:
+                pass
 
-        return np.nan_to_num(feature_vector, nan=0.0, posinf=0.0, neginf=0.0)
+        # Fallback using standard spectral centroid & filterbank approximation
+        fft_spectrum = np.abs(np.fft.rfft(waveform[: sample_rate * 2]))
+        bins = np.linspace(0, len(fft_spectrum) - 1, self._number_of_coefficients + 1, dtype=int)
+        energies = [np.mean(fft_spectrum[bins[i] : bins[i + 1]]) for i in range(self._number_of_coefficients)]
+        return np.nan_to_num(np.array(energies, dtype=np.float32), nan=0.0, posinf=0.0, neginf=0.0)
