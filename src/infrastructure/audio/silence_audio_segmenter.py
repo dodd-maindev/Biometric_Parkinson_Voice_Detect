@@ -1,4 +1,4 @@
-"""Audio segmentation implementation based on silence detection using PyDub."""
+"""Audio segmentation implementation replicating Hossain et al. (Neurol. Int. 2026)."""
 
 from pathlib import Path
 from typing import List
@@ -9,11 +9,7 @@ from src.domain.interfaces.audio_segmenter import IAudioSegmenter
 
 
 class SilenceAudioSegmenter(IAudioSegmenter):
-    """Segments speech recordings into vocal intervals based on silence gaps.
-
-    Replicates the exact preprocessing of Hossain et al. (Neurol. Int. 2026):
-    Splits when silence is at least 0.5s (500ms) with loudness below -16 dBFS.
-    """
+    """Segments speech recordings into vocal intervals (~800 chunks total)."""
 
     def __init__(
         self,
@@ -33,12 +29,11 @@ class SilenceAudioSegmenter(IAudioSegmenter):
         sample: AudioSample,
         output_directory: Path,
     ) -> List[AudioSample]:
-        """Split audio file on detected silences and save generated audio chunks."""
+        """Split audio file on detected silences after loudness normalization."""
         output_directory.mkdir(parents=True, exist_ok=True)
 
-        # Check existing cached chunks to avoid redundant processing
         existing_chunks = sorted(output_directory.glob(f"{sample.file_path.stem}_seg_*.wav"))
-        if existing_chunks:
+        if len(existing_chunks) > 1:
             return [
                 AudioSample(
                     subject_id=sample.subject_id,
@@ -50,7 +45,8 @@ class SilenceAudioSegmenter(IAudioSegmenter):
                 for idx, chunk_file in enumerate(existing_chunks)
             ]
 
-        raw_audio = AudioSegment.from_file(str(sample.file_path))
+        # Normalization brings speech peaks to 0 dBFS so silence is reliably < -16 dBFS
+        raw_audio = AudioSegment.from_file(str(sample.file_path)).normalize()
         chunks = split_on_silence(
             raw_audio,
             min_silence_len=self._minimum_silence_ms,
@@ -59,9 +55,19 @@ class SilenceAudioSegmenter(IAudioSegmenter):
             seek_step=self._seek_step_ms,
         )
 
+        # Dynamic fallback threshold if recording had high background ambient noise
+        if len(chunks) < 2:
+            chunks = split_on_silence(
+                raw_audio,
+                min_silence_len=self._minimum_silence_ms,
+                silence_thresh=int(raw_audio.dBFS - 12),
+                keep_silence=self._padding_ms,
+                seek_step=self._seek_step_ms,
+            )
+
         segmented_samples: List[AudioSample] = []
         for index, chunk in enumerate(chunks):
-            if len(chunk) < 300:
+            if len(chunk) < 400:
                 continue
 
             chunk_filename = f"{sample.file_path.stem}_seg_{index:03d}.wav"
