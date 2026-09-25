@@ -3,31 +3,20 @@
 import shutil
 from pathlib import Path
 from typing import List, Optional
-from tqdm import tqdm
-from src.application.services.experiment_logger_service import (
-    ExperimentLoggerService,
-)
-from src.application.services.feature_extraction_service import (
-    FeatureExtractionService,
-)
+from src.application.services.experiment_logger_service import ExperimentLoggerService
+from src.application.services.feature_extraction_service import FeatureExtractionService
 from src.application.strategies.subject_split_validation_strategy import (
     SubjectSplitValidationStrategy,
 )
 from src.domain.entities.audio_sample import AudioSample
 from src.domain.entities.evaluation_metrics import EvaluationMetrics
 from src.domain.interfaces.validation_strategy import IValidationStrategy
-from src.infrastructure.audio.silence_audio_segmenter import (
-    SilenceAudioSegmenter,
-)
+from src.infrastructure.audio.silence_audio_segmenter import SilenceAudioSegmenter
 from src.infrastructure.extractors.gammatone_cepstral_extractor import (
     GammatoneCepstralExtractor,
 )
-from src.infrastructure.extractors.praat_acoustic_extractor import (
-    PraatAcousticExtractor,
-)
-from src.infrastructure.models.support_vector_classifier import (
-    SupportVectorClassifier,
-)
+from src.infrastructure.extractors.praat_acoustic_extractor import PraatAcousticExtractor
+from src.infrastructure.models.support_vector_classifier import SupportVectorClassifier
 
 
 class BaselineReplicationPipeline:
@@ -48,52 +37,55 @@ class BaselineReplicationPipeline:
             print(f"  Cleared segment cache: {self._cache_dir}")
 
     def run(
-        self,
-        raw_samples: List[AudioSample],
-        use_segmentation: bool = True,
+        self, raw_samples: List[AudioSample], use_segmentation: bool = True,
     ) -> EvaluationMetrics:
         """Execute baseline: segmentation, Acoustic+GTCC extraction, evaluation."""
         processed = self._segment_audio(raw_samples, use_segmentation)
         self._log_dataset_overview(processed)
-        features, labels, _ = self._extract_features(processed)
-        return self._evaluate_classifier(features, labels, processed)
+        features, labels, samples = self._extract_features(processed)
+        return self._evaluate_classifier(features, labels, samples)
 
-    def _segment_audio(self, raw_samples, use_segmentation):
+    def _segment_audio(
+        self, raw_samples: List[AudioSample], use_segmentation: bool,
+    ) -> List[AudioSample]:
         """Segment raw audio files into vocal chunks if enabled."""
         if not use_segmentation:
             return raw_samples
-
         ExperimentLoggerService.log_section("AUDIO SEGMENTATION")
-        print(f"  Input: {len(raw_samples)} raw recordings")
-        print(f"  Target: ~808 vocal chunks (paper benchmark)")
-
+        print(f"  Input: {len(raw_samples)} raw recordings | Target: ~808 vocal chunks")
         processed: List[AudioSample] = []
         for sample in raw_samples:
             chunks = self._segmenter.segment(sample, self._cache_dir)
             processed.extend(chunks if chunks else [sample])
-
         print(f"\n  Result: {len(processed)} chunks from {len(raw_samples)} files")
         print(f"  Average: {len(processed)/len(raw_samples):.1f} chunks/file")
         return processed
 
-    def _log_dataset_overview(self, samples):
+    def _log_dataset_overview(self, samples: List[AudioSample]) -> None:
         """Log dataset composition after segmentation."""
         subjects = [s.subject_id for s in samples]
         labels = [s.label for s in samples]
         ExperimentLoggerService.log_dataset_summary(len(samples), subjects, labels)
         ExperimentLoggerService.log_per_subject_distribution(subjects, labels)
 
-    def _extract_features(self, samples):
-        """Extract Acoustic + GTCC features (24 dimensions)."""
+    def _extract_features(self, samples: List[AudioSample]):
+        """Extract Acoustic + GTCC features and filter unvoiced segments."""
         ExperimentLoggerService.log_section("FEATURE EXTRACTION (Acoustic + GTCC)")
         extractors = [
             PraatAcousticExtractor(),
             GammatoneCepstralExtractor(number_of_coefficients=13),
         ]
-        service = FeatureExtractionService(extractors)
-        return service.extract_dataset(samples)
+        features, labels, _ = FeatureExtractionService(extractors).extract_dataset(samples)
+        valid_idx = [i for i in range(len(features)) if features[i, 0] > 0.0]
+        if len(valid_idx) < len(features):
+            filtered = len(features) - len(valid_idx)
+            print(f"  Filtered {filtered} unvoiced segments (pitch_mean == 0)")
+            features = features[valid_idx]
+            labels = labels[valid_idx]
+            samples = [samples[i] for i in valid_idx]
+        return features, labels, samples
 
-    def _evaluate_classifier(self, features, labels, samples):
+    def _evaluate_classifier(self, features, labels, samples) -> EvaluationMetrics:
         """Train and evaluate a balanced SVM with hyperparameter tuning."""
         ExperimentLoggerService.log_section("MODEL TRAINING & EVALUATION")
         classifier = SupportVectorClassifier(enable_grid_search=True)

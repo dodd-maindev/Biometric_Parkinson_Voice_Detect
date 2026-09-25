@@ -1,8 +1,8 @@
 """Audio segmentation replicating Hossain et al. (~816 chunks from 73 files).
 
 Paper method (Section 2.2.2): silence detection at -16 dBFS, 0.5s gap.
-Raw audio is too quiet (dBFS -29 to -44), so we normalize first
-as per Section 2.2.1 signal normalization, then use adaptive threshold.
+Raw audio is quiet, so we normalize first as per Section 2.2.1, then
+use adaptive threshold offset from normalized dBFS.
 """
 
 from pathlib import Path
@@ -17,9 +17,8 @@ class SilenceAudioSegmenter(IAudioSegmenter):
     """Segments speech recordings into vocal intervals via silence detection."""
 
     _MINIMUM_SILENCE_MS: int = 500
-    _SILENCE_OFFSET_DB: int = 10
+    _SILENCE_OFFSET_DB: int = 16
     _KEEP_SILENCE_PADDING_MS: int = 150
-    _MIN_CHUNK_DURATION_MS: int = 1000
 
     def segment(
         self, sample: AudioSample, output_directory: Path,
@@ -43,10 +42,7 @@ class SilenceAudioSegmenter(IAudioSegmenter):
             seek_step=10,
         )
 
-        valid = [c for c in chunks if len(c) >= self._MIN_CHUNK_DURATION_MS]
-        if not valid:
-            valid = [normalized]
-
+        valid = chunks if chunks else [normalized]
         self._log_result(sample, raw_audio, normalized, threshold, valid)
         return self._export_chunks(sample, valid, output_directory)
 
