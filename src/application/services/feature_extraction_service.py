@@ -3,6 +3,9 @@
 from typing import List, Tuple
 import numpy as np
 from tqdm import tqdm
+from src.application.services.diagnostic_logger_service import (
+    DiagnosticLoggerService,
+)
 from src.domain.entities.audio_sample import AudioSample
 from src.domain.interfaces.feature_extractor import IFeatureExtractor
 
@@ -17,18 +20,22 @@ class FeatureExtractionService:
     @property
     def total_feature_dimension(self) -> int:
         """Return combined dimensionality of all registered extractors."""
-        return sum(extractor.feature_dimension for extractor in self._extractors)
+        return sum(e.feature_dimension for e in self._extractors)
+
+    @property
+    def all_feature_names(self) -> List[str]:
+        """Return combined feature names from all registered extractors."""
+        names: List[str] = []
+        for extractor in self._extractors:
+            names.extend(extractor.feature_names)
+        return names
 
     def extract_dataset(
         self,
         samples: List[AudioSample],
         show_progress: bool = True,
     ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        """Extract combined feature vectors, labels, and subject IDs for all samples.
-
-        Args:
-            samples: List of AudioSample entities to process.
-            show_progress: Display tqdm progress bar if True.
+        """Extract combined features, labels, and subject IDs for all samples.
 
         Returns:
             Tuple of (features_matrix [N, D], labels_vector [N], subject_ids [N]).
@@ -40,11 +47,7 @@ class FeatureExtractionService:
         iterator = tqdm(samples, desc="Extracting features") if show_progress else samples
 
         for sample in iterator:
-            sample_vectors: List[np.ndarray] = []
-            for extractor in self._extractors:
-                vector = extractor.extract(sample)
-                sample_vectors.append(vector)
-
+            sample_vectors = [e.extract(sample) for e in self._extractors]
             concatenated_vector = np.concatenate(sample_vectors)
             feature_rows.append(concatenated_vector)
             labels.append(sample.label)
@@ -52,5 +55,9 @@ class FeatureExtractionService:
 
         features_matrix = np.array(feature_rows, dtype=np.float32)
         labels_vector = np.array(labels, dtype=np.int32)
+
+        DiagnosticLoggerService.log_feature_statistics(
+            features_matrix, self.all_feature_names,
+        )
 
         return features_matrix, labels_vector, subject_ids

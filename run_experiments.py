@@ -22,13 +22,25 @@ from src.infrastructure.persistence.mdvr_dataset_loader import (
 
 def main() -> None:
     """Parse arguments and dispatch experimental evaluation."""
-    parser = argparse.ArgumentParser(description="Parkinson's Disease Voice Screening Benchmark")
-    parser.add_argument("--data_dir", type=str, default="./data/raw/mdvr_kcl", help="Dataset directory")
-    parser.add_argument("--experiment", type=str, default="baseline", choices=["baseline", "ssl_frozen", "ssl_probe"])
-    parser.add_argument("--task", type=str, default="READ_TEXT", choices=["READ_TEXT", "SPONTANEOUS_DIALOG"])
-    parser.add_argument("--eval_strategy", type=str, default="split", choices=["split", "losocv"])
-    parser.add_argument("--model_name", type=str, default="facebook/wav2vec2-base", help="HuggingFace model ID")
-    parser.add_argument("--layer_index", type=int, default=6, help="Layer index for probing (0-12)")
+    parser = argparse.ArgumentParser(
+        description="Parkinson's Disease Voice Screening Benchmark",
+    )
+    parser.add_argument("--data_dir", type=str, default="./data/raw/mdvr_kcl")
+    parser.add_argument(
+        "--experiment", type=str, default="baseline",
+        choices=["baseline", "ssl_frozen", "ssl_probe"],
+    )
+    parser.add_argument(
+        "--task", type=str, default="READ_TEXT",
+        choices=["READ_TEXT", "SPONTANEOUS_DIALOG"],
+    )
+    parser.add_argument(
+        "--eval_strategy", type=str, default="split",
+        choices=["split", "losocv"],
+    )
+    parser.add_argument("--model_name", type=str, default="facebook/wav2vec2-base")
+    parser.add_argument("--layer_index", type=int, default=6)
+    parser.add_argument("--clear_cache", action="store_true")
     args = parser.parse_args()
 
     data_path = Path(args.data_dir)
@@ -41,27 +53,35 @@ def main() -> None:
         print("No samples found! Please verify the dataset directory path.")
         return
 
-    strategy = SubjectSplitValidationStrategy() if args.eval_strategy == "split" else LeaveOneSubjectOutStrategy()
+    strategy = _build_strategy(args.eval_strategy)
+    metrics = _dispatch_experiment(args, samples, strategy)
 
+    print(f"\n===== FINAL RESULTS ({args.eval_strategy.upper()}) =====")
+    print(metrics.format_summary())
+    print("=" * 55 + "\n")
+
+
+def _build_strategy(eval_strategy: str):
+    """Construct the appropriate validation strategy from CLI argument."""
+    if eval_strategy == "split":
+        return SubjectSplitValidationStrategy()
+    return LeaveOneSubjectOutStrategy()
+
+
+def _dispatch_experiment(args, samples, strategy):
+    """Route to the correct pipeline based on experiment type."""
     if args.experiment == "baseline":
-        print(f"\n--- Running EXP-0: Baseline Replication (Acoustic + GTCC, {args.eval_strategy.upper()}) ---")
+        print(f"\n--- EXP-0: Baseline (Acoustic + GTCC, {args.eval_strategy.upper()}) ---")
         pipeline = BaselineReplicationPipeline(
             segmentation_cache_directory=Path("./data/processed/segments"),
             validation_strategy=strategy,
+            clear_segment_cache=args.clear_cache,
         )
-        metrics = pipeline.run(samples, use_segmentation=True)
-    elif args.experiment == "ssl_frozen":
-        print(f"\n--- Running EXP-1: Frozen SSL ({args.model_name}, {args.eval_strategy.upper()}) ---")
-        pipeline = SelfSupervisedEvaluationPipeline(model_name=args.model_name)
-        metrics = pipeline.run(samples)
-    else:
-        print(f"\n--- Running EXP-2: Layer-wise Probing (Layer {args.layer_index} of {args.model_name}) ---")
-        pipeline = SelfSupervisedEvaluationPipeline(model_name=args.model_name, layer_index=args.layer_index)
-        metrics = pipeline.run(samples)
+        return pipeline.run(samples, use_segmentation=True)
 
-    print(f"\n================ FINAL RESULTS ({args.eval_strategy.upper()}) ================")
-    print(metrics.format_summary())
-    print("=================================================================\n")
+    print(f"\n--- EXP-1: SSL ({args.model_name}, {args.eval_strategy.upper()}) ---")
+    pipeline = SelfSupervisedEvaluationPipeline(model_name=args.model_name)
+    return pipeline.run(samples)
 
 
 if __name__ == "__main__":

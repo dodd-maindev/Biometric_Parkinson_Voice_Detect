@@ -3,6 +3,9 @@
 from typing import List
 import numpy as np
 from sklearn.model_selection import train_test_split
+from src.application.services.diagnostic_logger_service import (
+    DiagnosticLoggerService,
+)
 from src.application.services.metric_calculation_service import (
     MetricCalculationService,
 )
@@ -27,11 +30,9 @@ class SubjectSplitValidationStrategy(IValidationStrategy):
         labels: np.ndarray,
         samples: List[AudioSample],
     ) -> EvaluationMetrics:
-        """Partition by subject ID into 70% train and 30% test sets, then evaluate."""
-        unique_subjects = list(dict.fromkeys([sample.subject_id for sample in samples]))
-        subject_labels = {
-            s.subject_id: s.label for s in samples
-        }
+        """Partition by subject ID into 70% train and 30% test, then evaluate."""
+        unique_subjects = list(dict.fromkeys([s.subject_id for s in samples]))
+        subject_labels = {s.subject_id: s.label for s in samples}
         stratify_labels = [subject_labels[subj] for subj in unique_subjects]
 
         train_subjects, test_subjects = train_test_split(
@@ -41,15 +42,21 @@ class SubjectSplitValidationStrategy(IValidationStrategy):
             stratify=stratify_labels,
         )
 
-        train_indices = [i for i, s in enumerate(samples) if s.subject_id in train_subjects]
-        test_indices = [i for i, s in enumerate(samples) if s.subject_id in test_subjects]
+        train_idx = [i for i, s in enumerate(samples) if s.subject_id in train_subjects]
+        test_idx = [i for i, s in enumerate(samples) if s.subject_id in test_subjects]
 
-        train_x, train_y = features[train_indices], labels[train_indices]
-        test_x, test_y = features[test_indices], labels[test_indices]
+        train_x, train_y = features[train_idx], labels[train_idx]
+        test_x, test_y = features[test_idx], labels[test_idx]
+
+        DiagnosticLoggerService.log_train_test_split(
+            train_subjects, test_subjects, train_y, test_y,
+        )
 
         classifier.fit(train_x, train_y)
         predictions = classifier.predict(test_x)
         probabilities = classifier.predict_probability(test_x)
+
+        DiagnosticLoggerService.log_confusion_matrix(test_y, predictions)
 
         return MetricCalculationService.calculate(
             ground_truth=test_y,
