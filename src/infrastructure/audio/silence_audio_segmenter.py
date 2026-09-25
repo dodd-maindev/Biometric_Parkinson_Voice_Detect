@@ -19,6 +19,7 @@ class SilenceAudioSegmenter(IAudioSegmenter):
     _MINIMUM_SILENCE_MS: int = 500
     _SILENCE_OFFSET_DB: int = 10
     _KEEP_SILENCE_PADDING_MS: int = 150
+    _MIN_CHUNK_DURATION_MS: int = 1000
 
     def segment(
         self, sample: AudioSample, output_directory: Path,
@@ -42,11 +43,12 @@ class SilenceAudioSegmenter(IAudioSegmenter):
             seek_step=10,
         )
 
-        if not chunks:
-            chunks = [normalized]
+        valid = [c for c in chunks if len(c) >= self._MIN_CHUNK_DURATION_MS]
+        if not valid:
+            valid = [normalized]
 
-        self._log_result(sample, raw_audio, normalized, threshold, chunks)
-        return self._export_chunks(sample, chunks, output_directory)
+        self._log_result(sample, raw_audio, normalized, threshold, valid)
+        return self._export_chunks(sample, valid, output_directory)
 
     def _log_result(
         self, sample: AudioSample, raw: AudioSegment,
