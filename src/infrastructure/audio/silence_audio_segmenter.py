@@ -14,7 +14,7 @@ class SilenceAudioSegmenter(IAudioSegmenter):
     _MINIMUM_SILENCE_MS: int = 500
     _SILENCE_OFFSET_DB: int = 10
     _KEEP_SILENCE_PADDING_MS: int = 150
-    _MIN_CHUNK_DURATION_MS: int = 2000
+    _MIN_CHUNK_DURATION_MS: int = 3000
 
     def segment(
         self, sample: AudioSample, output_directory: Path,

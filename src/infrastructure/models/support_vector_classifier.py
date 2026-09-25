@@ -2,14 +2,14 @@
 
 from typing import List, Optional
 import numpy as np
-from sklearn.model_selection import GridSearchCV, GroupKFold
+from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from src.domain.interfaces.classifier_model import IClassifierModel
 
 
 class SupportVectorClassifier(IClassifierModel):
-    """Encapsulates SVC with class balancing and subject-aware GridSearchCV."""
+    """Encapsulates SVC with class balancing and GridSearchCV tuning."""
 
     _PARAMETER_GRID = {
         "C": [0.1, 1.0, 10.0, 50.0, 100.0],
@@ -46,26 +46,22 @@ class SupportVectorClassifier(IClassifierModel):
         print(f"    SVM fit: {len(labels)} samples (PD={pd_count}, HC={hc_count})")
 
         if self._enable_grid_search and len(labels) >= 50:
-            self._fit_with_grid_search(scaled, labels, subject_groups)
+            self._fit_with_grid_search(scaled, labels)
         else:
             self._fit_default(scaled, labels)
 
-    def _fit_with_grid_search(
-        self, features: np.ndarray, labels: np.ndarray,
-        groups: Optional[List[str]] = None,
-    ) -> None:
-        """Grid search with subject-aware GroupKFold to prevent data leakage."""
-        cv_strategy = GroupKFold(n_splits=5) if groups else 5
+    def _fit_with_grid_search(self, features: np.ndarray, labels: np.ndarray) -> None:
+        """Grid search with stratified 10-fold CV matching paper methodology."""
         grid = GridSearchCV(
             SVC(
                 kernel=self._kernel, probability=True,
                 class_weight="balanced", random_state=self._seed,
             ),
             param_grid=self._PARAMETER_GRID,
-            cv=cv_strategy, scoring="f1", n_jobs=-1,
+            cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=self._seed),
+            scoring="f1", n_jobs=-1,
         )
-        fit_params = {"groups": groups} if groups else {}
-        grid.fit(features, labels, **fit_params)
+        grid.fit(features, labels)
         self._classifier = grid.best_estimator_
         print(f"    GridSearchCV best params: {grid.best_params_}")
         print(f"    GridSearchCV best F1 (CV): {grid.best_score_:.4f}")

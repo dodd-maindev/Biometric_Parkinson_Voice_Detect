@@ -52,8 +52,7 @@ class SubjectSplitValidationStrategy(IValidationStrategy):
             train_subjects, test_subjects, train_y, test_y,
         )
 
-        train_groups = [s.subject_id for i, s in enumerate(samples) if s.subject_id in train_subjects]
-        classifier.fit(train_x, train_y, subject_groups=train_groups)
+        classifier.fit(train_x, train_y)
         predictions = classifier.predict(test_x)
         probabilities = classifier.predict_probability(test_x)
 
