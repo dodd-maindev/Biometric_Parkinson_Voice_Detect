@@ -12,8 +12,8 @@ class SupportVectorClassifier(IClassifierModel):
     """Encapsulates SVC with class balancing and GridSearchCV tuning."""
 
     _PARAMETER_GRID = {
-        "C": [0.1, 1.0, 10.0, 50.0, 100.0],
-        "gamma": ["scale", "auto", 0.001, 0.01, 0.05],
+        "C": [0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+        "gamma": ["scale", "auto", 0.001, 0.005, 0.01, 0.02],
     }
 
     def __init__(

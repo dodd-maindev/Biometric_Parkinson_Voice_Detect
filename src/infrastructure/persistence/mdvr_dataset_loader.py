@@ -2,7 +2,7 @@
 
 import re
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Set, Tuple
 from src.domain.entities.audio_sample import AudioSample
 from src.domain.entities.speech_task_type import SpeechTaskType
 
@@ -25,6 +25,8 @@ class MdvrDatasetLoader:
             return []
 
         audio_samples: List[AudioSample] = []
+        seen_keys: Set[Tuple[str, SpeechTaskType]] = set()
+
         for file_path in sorted(self._root_dir.rglob("*.wav")):
             file_name = file_path.stem.lower()
             subject_id = self._extract_subject_id(file_name)
@@ -33,6 +35,11 @@ class MdvrDatasetLoader:
 
             if target_task_type is not None and task != target_task_type:
                 continue
+
+            unique_key = (subject_id, task)
+            if unique_key in seen_keys:
+                continue
+            seen_keys.add(unique_key)
 
             audio_samples.append(AudioSample(
                 subject_id=subject_id, file_path=file_path,
