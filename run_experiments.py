@@ -41,8 +41,9 @@ def main() -> None:
     parser.add_argument("--model_name", type=str, default="facebook/wav2vec2-base")
     parser.add_argument("--layer_index", type=int, default=6)
     parser.add_argument("--clear_cache", action="store_true")
+    parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
-        "--save_model_path", type=str, default=None,
+        "--save_model_path", type=str, default="./checkpoints/parkinson_svm_baseline.joblib",
         help="Optional path to serialize fitted model (.joblib)",
     )
     args = parser.parse_args()
@@ -57,7 +58,7 @@ def main() -> None:
         print("No samples found! Please verify the dataset directory path.")
         return
 
-    strategy = _build_strategy(args.eval_strategy)
+    strategy = _build_strategy(args.eval_strategy, args.seed)
     metrics = _dispatch_experiment(args, samples, strategy)
 
     print(f"\n===== FINAL RESULTS ({args.eval_strategy.upper()}) =====")
@@ -65,10 +66,10 @@ def main() -> None:
     print("=" * 55 + "\n")
 
 
-def _build_strategy(eval_strategy: str):
+def _build_strategy(eval_strategy: str, seed: int = 42):
     """Construct the appropriate validation strategy from CLI argument."""
     if eval_strategy == "split":
-        return SubjectSplitValidationStrategy()
+        return SubjectSplitValidationStrategy(random_seed=seed)
     return LeaveOneSubjectOutStrategy()
 
 
