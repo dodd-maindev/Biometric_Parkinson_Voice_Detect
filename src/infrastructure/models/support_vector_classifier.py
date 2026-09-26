@@ -13,35 +13,29 @@ from src.domain.interfaces.classifier_model import IClassifierModel
 class SupportVectorClassifier(IClassifierModel):
     """Encapsulates SVC with class balancing and GridSearchCV tuning."""
 
-    _PARAMETER_GRID = {
-        "C": [0.5, 1.0, 2.0, 3.0, 5.0, 10.0],
-        "gamma": ["scale", "auto", 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.02, 0.04],
+    _DEFAULT_GRID = {
+        "C": [1.0, 2.0, 3.0, 5.0, 7.0, 10.0], "gamma": ["scale", "auto", 0.02, 0.03, 0.04, 0.05, 0.06],
     }
 
     def __init__(
-        self,
-        c_regularization: float = 10.0,
-        kernel_type: str = "rbf",
-        gamma_parameter: str = "scale",
-        enable_grid_search: bool = True,
-        random_seed: int = 42,
+        self, c_regularization: float = 10.0, kernel_type: str = "rbf",
+        gamma_parameter: str = "scale", enable_grid_search: bool = True,
+        parameter_grid: Optional[dict] = None, random_seed: int = 42,
     ) -> None:
         """Initialize hyperparameters and preprocessor."""
         self._scaler = StandardScaler()
-        self._enable_grid_search = enable_grid_search
-        self._seed = random_seed
+        self._enable_grid_search, self._seed = enable_grid_search, random_seed
+        self._grid = parameter_grid or self._DEFAULT_GRID
         self._default_c, self._kernel, self._gamma = c_regularization, kernel_type, gamma_parameter
         self._classifier: Optional[SVC] = None
 
     def fit(
-        self, features: np.ndarray, labels: np.ndarray,
-        subject_groups: Optional[List[str]] = None,
+        self, features: np.ndarray, labels: np.ndarray, subject_groups: Optional[List[str]] = None,
     ) -> None:
         """Standardize features and fit SVM with balanced class weights."""
         scaled = self._scaler.fit_transform(features)
-        pd_count = int(np.sum(labels == 1))
-        hc_count = int(np.sum(labels == 0))
-        print(f"    SVM fit: {len(labels)} samples (PD={pd_count}, HC={hc_count})")
+        pd_cnt, hc_cnt = int(np.sum(labels == 1)), int(np.sum(labels == 0))
+        print(f"    SVM fit: {len(labels)} samples (PD={pd_cnt}, HC={hc_cnt})")
         if self._enable_grid_search and len(labels) >= 50:
             self._fit_with_grid_search(scaled, labels, subject_groups)
         else:
@@ -59,12 +53,11 @@ class SupportVectorClassifier(IClassifierModel):
         )
         grid = GridSearchCV(
             SVC(kernel=self._kernel, probability=True, class_weight="balanced", random_state=self._seed),
-            param_grid=self._PARAMETER_GRID, cv=cv, scoring="f1", n_jobs=-1,
+            param_grid=self._grid, cv=cv, scoring="f1", n_jobs=-1,
         )
         grid.fit(features, labels, groups=subject_groups)
         self._classifier = grid.best_estimator_
-        print(f"    GridSearchCV best params: {grid.best_params_}")
-        print(f"    GridSearchCV best F1 (CV): {grid.best_score_:.4f}")
+        print(f"    GridSearchCV best params: {grid.best_params_} | F1: {grid.best_score_:.4f}")
 
     def _fit_default(self, features: np.ndarray, labels: np.ndarray) -> None:
         """Fit with default hyperparameters."""
@@ -95,3 +88,12 @@ class SupportVectorClassifier(IClassifierModel):
         target.parent.mkdir(parents=True, exist_ok=True)
         joblib.dump({"scaler": self._scaler, "classifier": self._classifier}, target)
         print(f"    Saved model checkpoint to: {target}")
+
+    @classmethod
+    def load(cls, checkpoint_path: Path) -> "SupportVectorClassifier":
+        """Load pre-trained scaler and classifier checkpoint from disk."""
+        data = joblib.load(checkpoint_path)
+        inst = cls()
+        inst._scaler, inst._classifier = data["scaler"], data["classifier"]
+        print(f"    Loaded model checkpoint from: {checkpoint_path}")
+        return inst

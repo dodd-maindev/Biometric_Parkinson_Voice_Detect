@@ -26,12 +26,13 @@ def main() -> None:
     parser.add_argument("--layer_index", type=int, default=6)
     parser.add_argument("--pca_components", type=int, default=32)
     parser.add_argument("--ensemble_weight", type=float, default=0.60)
+    parser.add_argument(
+        "--baseline_checkpoint", type=str,
+        default="/content/drive/MyDrive/parkinson_svm_baseline_94_87.joblib",
+    )
     parser.add_argument("--clear_cache", action="store_true")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument(
-        "--save_model_path", type=str, default="./checkpoints/parkinson_model.joblib",
-        help="Optional path to serialize fitted model (.joblib)",
-    )
+    parser.add_argument("--save_model_path", type=str, default="./checkpoints/parkinson_model.joblib")
     args = parser.parse_args()
 
     data_path = Path(args.data_dir)
@@ -82,6 +83,7 @@ def _dispatch_experiment(args, samples, strategy):
         layer = args.layer_index if args.layer_index != 0 else None
         pipeline = EnsembleEvaluationPipeline(
             args.model_name, layer, args.ensemble_weight,
+            baseline_checkpoint=args.baseline_checkpoint,
             validation_strategy=strategy, output_model_path=save_path,
         )
         return pipeline.run(samples)
