@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 from src.application.pipelines.baseline_replication_pipeline import BaselineReplicationPipeline
+from src.application.pipelines.ensemble_evaluation_pipeline import EnsembleEvaluationPipeline
 from src.application.pipelines.hybrid_fusion_evaluation_pipeline import HybridFusionEvaluationPipeline
 from src.application.pipelines.self_supervised_evaluation_pipeline import SelfSupervisedEvaluationPipeline
 from src.application.strategies.leave_one_subject_out_strategy import LeaveOneSubjectOutStrategy
@@ -17,13 +18,14 @@ def main() -> None:
     parser.add_argument("--data_dir", type=str, default="./data/raw/mdvr_kcl")
     parser.add_argument(
         "--experiment", type=str, default="baseline",
-        choices=["baseline", "ssl_frozen", "ssl_probe", "hybrid_fusion"],
+        choices=["baseline", "ssl_frozen", "ssl_probe", "hybrid_fusion", "ensemble"],
     )
     parser.add_argument("--task", type=str, default="READ_TEXT", choices=["READ_TEXT", "SPONTANEOUS_DIALOG"])
     parser.add_argument("--eval_strategy", type=str, default="split", choices=["split", "losocv"])
     parser.add_argument("--model_name", type=str, default="facebook/wav2vec2-base")
     parser.add_argument("--layer_index", type=int, default=6)
     parser.add_argument("--pca_components", type=int, default=32)
+    parser.add_argument("--ensemble_weight", type=float, default=0.60)
     parser.add_argument("--clear_cache", action="store_true")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
@@ -71,6 +73,15 @@ def _dispatch_experiment(args, samples, strategy):
         layer = args.layer_index if args.layer_index != 0 else None
         pipeline = HybridFusionEvaluationPipeline(
             args.model_name, layer, args.pca_components,
+            validation_strategy=strategy, output_model_path=save_path,
+        )
+        return pipeline.run(samples)
+
+    if args.experiment == "ensemble":
+        print(f"\n--- EXP-3: Soft Voting Ensemble (Baseline + {args.model_name}) ---")
+        layer = args.layer_index if args.layer_index != 0 else None
+        pipeline = EnsembleEvaluationPipeline(
+            args.model_name, layer, args.ensemble_weight,
             validation_strategy=strategy, output_model_path=save_path,
         )
         return pipeline.run(samples)
