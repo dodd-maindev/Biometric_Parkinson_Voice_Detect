@@ -26,24 +26,15 @@ def main() -> None:
         description="Parkinson's Disease Voice Screening Benchmark",
     )
     parser.add_argument("--data_dir", type=str, default="./data/raw/mdvr_kcl")
-    parser.add_argument(
-        "--experiment", type=str, default="baseline",
-        choices=["baseline", "ssl_frozen", "ssl_probe"],
-    )
-    parser.add_argument(
-        "--task", type=str, default="READ_TEXT",
-        choices=["READ_TEXT", "SPONTANEOUS_DIALOG"],
-    )
-    parser.add_argument(
-        "--eval_strategy", type=str, default="split",
-        choices=["split", "losocv"],
-    )
+    parser.add_argument("--experiment", type=str, default="baseline", choices=["baseline", "ssl_frozen", "ssl_probe"])
+    parser.add_argument("--task", type=str, default="READ_TEXT", choices=["READ_TEXT", "SPONTANEOUS_DIALOG"])
+    parser.add_argument("--eval_strategy", type=str, default="split", choices=["split", "losocv"])
     parser.add_argument("--model_name", type=str, default="facebook/wav2vec2-base")
     parser.add_argument("--layer_index", type=int, default=6)
     parser.add_argument("--clear_cache", action="store_true")
     parser.add_argument("--seed", type=int, default=42, help="Random seed")
     parser.add_argument(
-        "--save_model_path", type=str, default="./checkpoints/parkinson_svm_baseline.joblib",
+        "--save_model_path", type=str, default="./checkpoints/parkinson_model.joblib",
         help="Optional path to serialize fitted model (.joblib)",
     )
     args = parser.parse_args()
@@ -55,8 +46,7 @@ def main() -> None:
 
     print(f"Loaded {len(samples)} samples for task {task_type.name} from {data_path}")
     if not samples:
-        print("No samples found! Please verify the dataset directory path.")
-        return
+        return print("No samples found! Please verify the dataset directory path.")
 
     strategy = _build_strategy(args.eval_strategy, args.seed)
     metrics = _dispatch_experiment(args, samples, strategy)
@@ -75,9 +65,9 @@ def _build_strategy(eval_strategy: str, seed: int = 42):
 
 def _dispatch_experiment(args, samples, strategy):
     """Route to the correct pipeline based on experiment type."""
+    save_path = Path(args.save_model_path) if args.save_model_path else None
     if args.experiment == "baseline":
         print(f"\n--- EXP-0: Baseline (Acoustic + GTCC, {args.eval_strategy.upper()}) ---")
-        save_path = Path(args.save_model_path) if args.save_model_path else None
         pipeline = BaselineReplicationPipeline(
             segmentation_cache_directory=Path("./data/processed/segments"),
             validation_strategy=strategy,
@@ -87,7 +77,11 @@ def _dispatch_experiment(args, samples, strategy):
         return pipeline.run(samples, use_segmentation=True)
 
     print(f"\n--- EXP-1: SSL ({args.model_name}, {args.eval_strategy.upper()}) ---")
-    pipeline = SelfSupervisedEvaluationPipeline(model_name=args.model_name)
+    layer = args.layer_index if args.experiment == "ssl_probe" else None
+    pipeline = SelfSupervisedEvaluationPipeline(
+        model_name=args.model_name, layer_index=layer,
+        validation_strategy=strategy, output_model_path=save_path,
+    )
     return pipeline.run(samples)
 
 
