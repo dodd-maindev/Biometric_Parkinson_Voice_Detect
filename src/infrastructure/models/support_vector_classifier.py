@@ -15,7 +15,7 @@ class SupportVectorClassifier(IClassifierModel):
 
     _PARAMETER_GRID = {
         "C": [0.5, 1.0, 2.0, 3.0, 5.0, 10.0],
-        "gamma": ["scale", "auto", 0.001, 0.005, 0.01, 0.02, 0.04],
+        "gamma": ["scale", "auto", 0.0001, 0.0005, 0.001, 0.005, 0.01, 0.02, 0.04],
     }
 
     def __init__(
