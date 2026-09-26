@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import List, Optional
 import joblib
 import numpy as np
-from sklearn.model_selection import GridSearchCV, StratifiedKFold
+from sklearn.model_selection import GridSearchCV, StratifiedGroupKFold, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
 from sklearn.svm import SVC
 from src.domain.interfaces.classifier_model import IClassifierModel
@@ -14,8 +14,8 @@ class SupportVectorClassifier(IClassifierModel):
     """Encapsulates SVC with class balancing and GridSearchCV tuning."""
 
     _PARAMETER_GRID = {
-        "C": [1.0, 2.0, 3.0, 4.0, 5.0, 7.0, 10.0],
-        "gamma": ["scale", "auto", 0.04, 0.06, 0.08, 0.10, 0.12, 0.15],
+        "C": [1.0, 2.0, 3.0, 5.0, 7.0, 10.0],
+        "gamma": ["scale", "auto", 0.02, 0.03, 0.04, 0.05, 0.06],
     }
 
     def __init__(
@@ -43,19 +43,25 @@ class SupportVectorClassifier(IClassifierModel):
         hc_count = int(np.sum(labels == 0))
         print(f"    SVM fit: {len(labels)} samples (PD={pd_count}, HC={hc_count})")
         if self._enable_grid_search and len(labels) >= 50:
-            self._fit_with_grid_search(scaled, labels)
+            self._fit_with_grid_search(scaled, labels, subject_groups)
         else:
             self._fit_default(scaled, labels)
 
-    def _fit_with_grid_search(self, features: np.ndarray, labels: np.ndarray) -> None:
-        """Grid search with stratified 10-fold CV matching paper methodology."""
+    def _fit_with_grid_search(
+        self, features: np.ndarray, labels: np.ndarray,
+        subject_groups: Optional[List[str]] = None,
+    ) -> None:
+        """Grid search with group-aware CV to ensure subject-independent tuning."""
+        cv = (
+            StratifiedGroupKFold(n_splits=5, shuffle=True, random_state=self._seed)
+            if subject_groups is not None
+            else StratifiedKFold(n_splits=10, shuffle=True, random_state=self._seed)
+        )
         grid = GridSearchCV(
             SVC(kernel=self._kernel, probability=True, class_weight="balanced", random_state=self._seed),
-            param_grid=self._PARAMETER_GRID,
-            cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=self._seed),
-            scoring="f1", n_jobs=-1,
+            param_grid=self._PARAMETER_GRID, cv=cv, scoring="f1", n_jobs=-1,
         )
-        grid.fit(features, labels)
+        grid.fit(features, labels, groups=subject_groups)
         self._classifier = grid.best_estimator_
         print(f"    GridSearchCV best params: {grid.best_params_}")
         print(f"    GridSearchCV best F1 (CV): {grid.best_score_:.4f}")

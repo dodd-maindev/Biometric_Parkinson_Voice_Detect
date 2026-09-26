@@ -1,6 +1,5 @@
-"""Service orchestrating multiple feature extractors across audio samples."""
-
-from typing import List, Tuple
+from pathlib import Path
+from typing import List, Optional, Tuple
 import numpy as np
 from tqdm import tqdm
 from src.application.services.diagnostic_logger_service import (
@@ -34,30 +33,37 @@ class FeatureExtractionService:
         self,
         samples: List[AudioSample],
         show_progress: bool = True,
+        cache_file: Optional[Path] = None,
     ) -> Tuple[np.ndarray, np.ndarray, List[str]]:
-        """Extract combined features, labels, and subject IDs for all samples.
+        """Extract or load cached combined features, labels, and subject IDs."""
+        if cache_file is not None and cache_file.exists():
+            data = np.load(cache_file)
+            print(f"  Loaded {len(data['labels'])} cached features from {cache_file.name}")
+            return data["features"], data["labels"], list(data["subjects"])
 
-        Returns:
-            Tuple of (features_matrix [N, D], labels_vector [N], subject_ids [N]).
-        """
         feature_rows: List[np.ndarray] = []
         labels: List[int] = []
         subject_ids: List[str] = []
-
         iterator = tqdm(samples, desc="Extracting features") if show_progress else samples
 
         for sample in iterator:
             sample_vectors = [e.extract(sample) for e in self._extractors]
-            concatenated_vector = np.concatenate(sample_vectors)
-            feature_rows.append(concatenated_vector)
+            feature_rows.append(np.concatenate(sample_vectors))
             labels.append(sample.label)
             subject_ids.append(sample.subject_id)
 
         features_matrix = np.array(feature_rows, dtype=np.float32)
         labels_vector = np.array(labels, dtype=np.int32)
 
+        if cache_file is not None:
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(
+                cache_file, features=features_matrix,
+                labels=labels_vector, subjects=np.array(subject_ids),
+            )
+            print(f"  Cached features to {cache_file.name}")
+
         DiagnosticLoggerService.log_feature_statistics(
             features_matrix, self.all_feature_names,
         )
-
         return features_matrix, labels_vector, subject_ids
