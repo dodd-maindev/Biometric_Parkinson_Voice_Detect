@@ -27,13 +27,19 @@ def main() -> None:
     parser.add_argument("--clear_cache", action="store_true")
     parser.add_argument("--seed", type=int, default=42, help="Random seed for single run")
     parser.add_argument("--seeds", type=str, default="", help="Comma-separated seeds e.g. '42,10,2024,7,99'")
+    parser.add_argument("--num_seeds", type=int, default=0, help="Generate N distinct seeds including 42")
     parser.add_argument("--save_model_path", type=str, default="/content/drive/MyDrive/parkinson_tri_modal_97_44_best.joblib")
     args = parser.parse_args()
 
     samples = MdvrDatasetLoader(Path(args.data_dir)).load_samples(target_task_type=SpeechTaskType.from_string(args.task))
     if not samples: return print("No samples found! Please verify the dataset directory path.")
 
-    seeds = [int(s.strip()) for s in args.seeds.split(",") if s.strip()] if args.seeds else [args.seed]
+    if args.num_seeds > 0:
+        seeds = [42] + [i for i in range(1, args.num_seeds + 1) if i != 42][:args.num_seeds - 1]
+    elif args.seeds:
+        seeds = [int(s.strip()) for s in args.seeds.split(",") if s.strip()]
+    else:
+        seeds = [args.seed]
     results = []
     for s in seeds:
         print(f"\n>>>> EXECUTING EXPERIMENT [{args.experiment.upper()}] WITH SEED: {s} <<<<")
