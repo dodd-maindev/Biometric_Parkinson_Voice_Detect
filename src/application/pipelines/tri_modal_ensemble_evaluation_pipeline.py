@@ -23,13 +23,13 @@ class TriModalEnsembleEvaluationPipeline:
         baseline_checkpoint: Optional[str] = None, threshold: float = 0.50,
         cache_directory: Path = Path("./data/processed/segments"),
         validation_strategy: Optional[IValidationStrategy] = None,
-        output_model_path: Optional[Path] = None, random_seed: int = 42,
+        output_model_path: Optional[Path] = None,
     ) -> None:
         """Initialize tri-modal ensemble with weights and sub-pipelines."""
-        self._weights, self._threshold, self._seed = weights, threshold, random_seed
+        self._weights, self._threshold = weights, threshold
         self._base_ckpt = Path(baseline_checkpoint) if baseline_checkpoint else None
         self._cache_dir, self._output_model_path = Path(cache_directory), output_model_path
-        self._validator = validation_strategy or SubjectSplitValidationStrategy(random_seed=random_seed)
+        self._validator = validation_strategy or SubjectSplitValidationStrategy()
         self._baseline_pipe = BaselineReplicationPipeline(self._cache_dir, self._validator)
         self._wavlm_pipe = SelfSupervisedEvaluationPipeline("microsoft/wavlm-base-plus", 6, segmentation_cache_directory=self._cache_dir)
         self._w2v2_pipe = SelfSupervisedEvaluationPipeline("facebook/wav2vec2-base", 6, segmentation_cache_directory=self._cache_dir)
@@ -70,13 +70,13 @@ class TriModalEnsembleEvaluationPipeline:
         """Derive identical train/test indices using subject-level stratification."""
         subjects = list(dict.fromkeys([s.subject_id for s in samples]))
         labels = {s.subject_id: s.label for s in samples}
-        train_s, test_s = train_test_split(subjects, test_size=0.30, random_state=self._seed, stratify=[labels[s] for s in subjects])
+        train_s, test_s = train_test_split(subjects, test_size=0.30, random_state=42, stratify=[labels[s] for s in subjects])
         return ([i for i, s in enumerate(samples) if s.subject_id in train_s],
                 [i for i, s in enumerate(samples) if s.subject_id in test_s])
 
     def _get_base_probs(self, feat, labels, samples, train_idx, test_idx):
         """Obtain baseline model and probabilities from checkpoint or sweet-spot fit."""
-        if self._seed == 42 and self._base_ckpt and self._base_ckpt.exists():
+        if self._base_ckpt and self._base_ckpt.exists():
             clf = SupportVectorClassifier.load(self._base_ckpt)
             return clf, clf.predict_probability(feat[test_idx])
         grid = {"C": [1.0, 3.0, 5.0, 7.0, 10.0], "gamma": ["scale", "auto", 0.02, 0.04, 0.05, 0.06]}
