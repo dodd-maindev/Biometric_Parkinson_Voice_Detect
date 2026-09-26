@@ -6,6 +6,7 @@ from src.application.pipelines.baseline_replication_pipeline import BaselineRepl
 from src.application.pipelines.ensemble_evaluation_pipeline import EnsembleEvaluationPipeline
 from src.application.pipelines.hybrid_fusion_evaluation_pipeline import HybridFusionEvaluationPipeline
 from src.application.pipelines.self_supervised_evaluation_pipeline import SelfSupervisedEvaluationPipeline
+from src.application.pipelines.tri_modal_ensemble_evaluation_pipeline import TriModalEnsembleEvaluationPipeline
 from src.application.strategies.leave_one_subject_out_strategy import LeaveOneSubjectOutStrategy
 from src.application.strategies.subject_split_validation_strategy import SubjectSplitValidationStrategy
 from src.domain.entities.speech_task_type import SpeechTaskType
@@ -18,7 +19,7 @@ def main() -> None:
     parser.add_argument("--data_dir", type=str, default="./data/raw/mdvr_kcl")
     parser.add_argument(
         "--experiment", type=str, default="baseline",
-        choices=["baseline", "ssl_frozen", "ssl_probe", "hybrid_fusion", "ensemble"],
+        choices=["baseline", "ssl_frozen", "ssl_probe", "hybrid_fusion", "ensemble", "tri_modal"],
     )
     parser.add_argument("--task", type=str, default="READ_TEXT", choices=["READ_TEXT", "SPONTANEOUS_DIALOG"])
     parser.add_argument("--eval_strategy", type=str, default="split", choices=["split", "losocv"])
@@ -26,6 +27,8 @@ def main() -> None:
     parser.add_argument("--layer_index", type=int, default=6)
     parser.add_argument("--pca_components", type=int, default=32)
     parser.add_argument("--ensemble_weight", type=float, default=0.60)
+    parser.add_argument("--tri_weights", type=str, default="0.50,0.30,0.20")
+    parser.add_argument("--decision_threshold", type=float, default=0.50)
     parser.add_argument(
         "--baseline_checkpoint", type=str,
         default="/content/drive/MyDrive/parkinson_svm_baseline_94_87.joblib",
@@ -39,61 +42,47 @@ def main() -> None:
     loader = MdvrDatasetLoader(data_path)
     task_type = SpeechTaskType.from_string(args.task)
     samples = loader.load_samples(target_task_type=task_type)
-
     print(f"Loaded {len(samples)} samples for task {task_type.name} from {data_path}")
     if not samples:
         return print("No samples found! Please verify the dataset directory path.")
 
     strategy = _build_strategy(args.eval_strategy, args.seed)
     metrics = _dispatch_experiment(args, samples, strategy)
-
-    print(f"\n===== FINAL RESULTS ({args.eval_strategy.upper()}) =====")
-    print(metrics.format_summary())
-    print("=" * 55 + "\n")
+    print(f"\n===== FINAL RESULTS ({args.eval_strategy.upper()}) =====\n{metrics.format_summary()}\n" + "=" * 55 + "\n")
 
 
 def _build_strategy(eval_strategy: str, seed: int = 42):
     """Construct the appropriate validation strategy from CLI argument."""
-    if eval_strategy == "split":
-        return SubjectSplitValidationStrategy(random_seed=seed)
-    return LeaveOneSubjectOutStrategy()
+    return SubjectSplitValidationStrategy(random_seed=seed) if eval_strategy == "split" else LeaveOneSubjectOutStrategy()
 
 
 def _dispatch_experiment(args, samples, strategy):
     """Route to the correct pipeline based on experiment type."""
     save_path = Path(args.save_model_path) if args.save_model_path else None
+    layer = args.layer_index if args.layer_index != 0 else None
     if args.experiment == "baseline":
-        print(f"\n--- EXP-0: Baseline (Acoustic + GTCC, {args.eval_strategy.upper()}) ---")
-        pipeline = BaselineReplicationPipeline(
+        return BaselineReplicationPipeline(
             Path("./data/processed/segments"), strategy, args.clear_cache, save_path,
-        )
-        return pipeline.run(samples, use_segmentation=True)
-
+        ).run(samples, use_segmentation=True)
     if args.experiment == "hybrid_fusion":
-        print(f"\n--- EXP-2: Hybrid Fusion ({args.model_name}, PCA={args.pca_components}) ---")
-        layer = args.layer_index if args.layer_index != 0 else None
-        pipeline = HybridFusionEvaluationPipeline(
-            args.model_name, layer, args.pca_components,
-            validation_strategy=strategy, output_model_path=save_path,
-        )
-        return pipeline.run(samples)
-
+        return HybridFusionEvaluationPipeline(
+            args.model_name, layer, args.pca_components, strategy, save_path,
+        ).run(samples)
     if args.experiment == "ensemble":
-        print(f"\n--- EXP-3: Soft Voting Ensemble (Baseline + {args.model_name}) ---")
-        layer = args.layer_index if args.layer_index != 0 else None
-        pipeline = EnsembleEvaluationPipeline(
-            args.model_name, layer, args.ensemble_weight,
-            baseline_checkpoint=args.baseline_checkpoint,
+        return EnsembleEvaluationPipeline(
+            args.model_name, layer, args.ensemble_weight, args.baseline_checkpoint,
             validation_strategy=strategy, output_model_path=save_path,
-        )
-        return pipeline.run(samples)
-
-    print(f"\n--- EXP-1: SSL ({args.model_name}, {args.eval_strategy.upper()}) ---")
-    layer = args.layer_index if args.experiment == "ssl_probe" else None
-    pipeline = SelfSupervisedEvaluationPipeline(
+        ).run(samples)
+    if args.experiment == "tri_modal":
+        w = tuple(float(x.strip()) for x in args.tri_weights.split(","))
+        return TriModalEnsembleEvaluationPipeline(
+            weights=w, baseline_checkpoint=args.baseline_checkpoint,
+            threshold=args.decision_threshold, validation_strategy=strategy,
+            output_model_path=save_path,
+        ).run(samples)
+    return SelfSupervisedEvaluationPipeline(
         args.model_name, layer, validation_strategy=strategy, output_model_path=save_path,
-    )
-    return pipeline.run(samples)
+    ).run(samples)
 
 
 if __name__ == "__main__":
