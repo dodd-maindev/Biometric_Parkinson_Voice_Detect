@@ -6,8 +6,8 @@ from src.infrastructure.extractors.frozen_speech_encoder import (
 from src.infrastructure.extractors.gammatone_cepstral_extractor import (
     GammatoneCepstralExtractor,
 )
-from src.infrastructure.extractors.mel_cepstral_extractor import (
-    MelCepstralExtractor,
+from src.infrastructure.extractors.layer_weighted_encoder import (
+    LayerWeightedEncoder,
 )
 from src.infrastructure.extractors.praat_acoustic_extractor import (
     PraatAcousticExtractor,
@@ -16,6 +16,6 @@ from src.infrastructure.extractors.praat_acoustic_extractor import (
 __all__ = [
     "FrozenSpeechEncoder",
     "GammatoneCepstralExtractor",
-    "MelCepstralExtractor",
+    "LayerWeightedEncoder",
     "PraatAcousticExtractor",
 ]
