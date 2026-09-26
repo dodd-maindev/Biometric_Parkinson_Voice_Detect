@@ -41,6 +41,10 @@ def main() -> None:
     parser.add_argument("--model_name", type=str, default="facebook/wav2vec2-base")
     parser.add_argument("--layer_index", type=int, default=6)
     parser.add_argument("--clear_cache", action="store_true")
+    parser.add_argument(
+        "--save_model_path", type=str, default=None,
+        help="Optional path to serialize fitted model (.joblib)",
+    )
     args = parser.parse_args()
 
     data_path = Path(args.data_dir)
@@ -72,10 +76,12 @@ def _dispatch_experiment(args, samples, strategy):
     """Route to the correct pipeline based on experiment type."""
     if args.experiment == "baseline":
         print(f"\n--- EXP-0: Baseline (Acoustic + GTCC, {args.eval_strategy.upper()}) ---")
+        save_path = Path(args.save_model_path) if args.save_model_path else None
         pipeline = BaselineReplicationPipeline(
             segmentation_cache_directory=Path("./data/processed/segments"),
             validation_strategy=strategy,
             clear_segment_cache=args.clear_cache,
+            output_model_path=save_path,
         )
         return pipeline.run(samples, use_segmentation=True)
 

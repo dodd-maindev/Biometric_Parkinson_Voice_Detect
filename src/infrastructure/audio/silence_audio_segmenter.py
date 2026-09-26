@@ -16,10 +16,10 @@ from src.domain.interfaces.audio_segmenter import IAudioSegmenter
 class SilenceAudioSegmenter(IAudioSegmenter):
     """Segments speech recordings into vocal intervals via silence detection."""
 
-    _MINIMUM_SILENCE_MS: int = 600
+    _MINIMUM_SILENCE_MS: int = 500
     _SILENCE_OFFSET_DB: int = 10
     _KEEP_SILENCE_PADDING_MS: int = 150
-    _MIN_CHUNK_DURATION_MS: int = 1400
+    _MIN_CHUNK_DURATION_MS: int = 1000
 
     def segment(
         self, sample: AudioSample, output_directory: Path,

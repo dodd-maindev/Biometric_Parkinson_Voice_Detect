@@ -1,6 +1,8 @@
 """Support Vector Machine with standardization, balanced weights, and tuning."""
 
+from pathlib import Path
 from typing import List, Optional
+import joblib
 import numpy as np
 from sklearn.model_selection import GridSearchCV, StratifiedKFold
 from sklearn.preprocessing import StandardScaler
@@ -12,8 +14,8 @@ class SupportVectorClassifier(IClassifierModel):
     """Encapsulates SVC with class balancing and GridSearchCV tuning."""
 
     _PARAMETER_GRID = {
-        "C": [1.0, 3.0, 5.0, 7.0, 8.0, 10.0],
-        "gamma": ["scale", "auto", 0.02, 0.03, 0.04, 0.05],
+        "C": [0.1, 0.5, 1.0, 2.0, 5.0, 10.0],
+        "gamma": ["scale", "auto", 0.001, 0.005, 0.01, 0.02],
     }
 
     def __init__(
@@ -28,15 +30,11 @@ class SupportVectorClassifier(IClassifierModel):
         self._scaler = StandardScaler()
         self._enable_grid_search = enable_grid_search
         self._seed = random_seed
-        self._default_c = c_regularization
-        self._kernel = kernel_type
-        self._gamma = gamma_parameter
+        self._default_c, self._kernel, self._gamma = c_regularization, kernel_type, gamma_parameter
         self._classifier: Optional[SVC] = None
 
     def fit(
-        self,
-        features: np.ndarray,
-        labels: np.ndarray,
+        self, features: np.ndarray, labels: np.ndarray,
         subject_groups: Optional[List[str]] = None,
     ) -> None:
         """Standardize features and fit SVM with balanced class weights."""
@@ -44,21 +42,15 @@ class SupportVectorClassifier(IClassifierModel):
         pd_count = int(np.sum(labels == 1))
         hc_count = int(np.sum(labels == 0))
         print(f"    SVM fit: {len(labels)} samples (PD={pd_count}, HC={hc_count})")
-
         if self._enable_grid_search and len(labels) >= 50:
             self._fit_with_grid_search(scaled, labels)
         else:
             self._fit_default(scaled, labels)
 
-    def _fit_with_grid_search(
-        self, features: np.ndarray, labels: np.ndarray,
-    ) -> None:
+    def _fit_with_grid_search(self, features: np.ndarray, labels: np.ndarray) -> None:
         """Grid search with stratified 10-fold CV matching paper methodology."""
         grid = GridSearchCV(
-            SVC(
-                kernel=self._kernel, probability=True,
-                class_weight="balanced", random_state=self._seed,
-            ),
+            SVC(kernel=self._kernel, probability=True, class_weight="balanced", random_state=self._seed),
             param_grid=self._PARAMETER_GRID,
             cv=StratifiedKFold(n_splits=10, shuffle=True, random_state=self._seed),
             scoring="f1", n_jobs=-1,
@@ -88,3 +80,12 @@ class SupportVectorClassifier(IClassifierModel):
         if self._classifier is None:
             raise RuntimeError("Classifier must be fitted prior to predicting.")
         return self._classifier.predict_proba(self._scaler.transform(features))[:, 1]
+
+    def save(self, destination_path: Path) -> None:
+        """Serialize scaler and fitted classifier to disk via joblib."""
+        if self._classifier is None:
+            raise RuntimeError("Cannot save an unfitted classifier.")
+        target = Path(destination_path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        joblib.dump({"scaler": self._scaler, "classifier": self._classifier}, target)
+        print(f"    Saved model checkpoint to: {target}")

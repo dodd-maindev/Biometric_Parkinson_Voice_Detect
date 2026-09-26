@@ -27,11 +27,13 @@ class BaselineReplicationPipeline:
         segmentation_cache_directory: Path,
         validation_strategy: Optional[IValidationStrategy] = None,
         clear_segment_cache: bool = False,
+        output_model_path: Optional[Path] = None,
     ) -> None:
         """Initialize pipeline with segment cache directory and validation strategy."""
         self._cache_dir = Path(segmentation_cache_directory)
         self._segmenter = SilenceAudioSegmenter()
         self._validator = validation_strategy or SubjectSplitValidationStrategy()
+        self._output_model_path = output_model_path
         if clear_segment_cache and self._cache_dir.exists():
             shutil.rmtree(self._cache_dir)
             print(f"  Cleared segment cache: {self._cache_dir}")
@@ -89,4 +91,7 @@ class BaselineReplicationPipeline:
         """Train and evaluate a balanced SVM with hyperparameter tuning."""
         ExperimentLoggerService.log_section("MODEL TRAINING & EVALUATION")
         classifier = SupportVectorClassifier(enable_grid_search=True)
-        return self._validator.evaluate(classifier, features, labels, samples)
+        metrics = self._validator.evaluate(classifier, features, labels, samples)
+        if self._output_model_path is not None:
+            classifier.save(self._output_model_path)
+        return metrics
