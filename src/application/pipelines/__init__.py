@@ -3,6 +3,9 @@
 from src.application.pipelines.baseline_replication_pipeline import (
     BaselineReplicationPipeline,
 )
+from src.application.pipelines.multi_domain_routing_pipeline import (
+    MultiDomainRoutingPipeline,
+)
 from src.application.pipelines.self_supervised_evaluation_pipeline import (
     SelfSupervisedEvaluationPipeline,
 )
@@ -12,6 +15,7 @@ from src.application.pipelines.tri_modal_ensemble_evaluation_pipeline import (
 
 __all__ = [
     "BaselineReplicationPipeline",
+    "MultiDomainRoutingPipeline",
     "SelfSupervisedEvaluationPipeline",
     "TriModalEnsembleEvaluationPipeline",
 ]

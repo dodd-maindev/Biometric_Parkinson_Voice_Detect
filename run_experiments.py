@@ -8,70 +8,60 @@ from src.application.pipelines.tri_modal_ensemble_evaluation_pipeline import Tri
 from src.application.strategies.leave_one_subject_out_strategy import LeaveOneSubjectOutStrategy
 from src.application.strategies.subject_split_validation_strategy import SubjectSplitValidationStrategy
 from src.domain.entities.speech_task_type import SpeechTaskType
+from src.infrastructure.persistence.archive_voice_dataset_loader import ArchiveVoiceDatasetLoader
 from src.infrastructure.persistence.mdvr_dataset_loader import MdvrDatasetLoader
 
 
 def main() -> None:
     """Parse arguments and dispatch experimental evaluation."""
     parser = argparse.ArgumentParser(description="Parkinson's Disease Voice Screening Benchmark")
+    parser.add_argument("--dataset", type=str, default="mdvr", choices=["mdvr", "voice_dataset"])
     parser.add_argument("--data_dir", type=str, default="./data/raw/mdvr_kcl")
-    parser.add_argument(
-        "--experiment", type=str, default="tri_modal",
-        choices=["tri_modal", "baseline", "ssl_probe"],
-    )
-    parser.add_argument("--task", type=str, default="READ_TEXT", choices=["READ_TEXT", "SPONTANEOUS_DIALOG"])
+    parser.add_argument("--experiment", type=str, default="tri_modal", choices=["tri_modal", "baseline", "ssl_probe"])
+    parser.add_argument("--task", type=str, default="READ_TEXT", choices=["READ_TEXT", "SPONTANEOUS_DIALOG", "SUSTAINED_VOWEL"])
     parser.add_argument("--eval_strategy", type=str, default="split", choices=["split", "losocv"])
     parser.add_argument("--model_name", type=str, default="microsoft/wavlm-base-plus")
     parser.add_argument("--layer_index", type=int, default=6)
     parser.add_argument("--tri_weights", type=str, default="0.50,0.30,0.20")
     parser.add_argument("--decision_threshold", type=float, default=0.56)
-    parser.add_argument(
-        "--baseline_checkpoint", type=str,
-        default="/content/drive/MyDrive/parkinson_svm_baseline_94_87.joblib",
-    )
+    parser.add_argument("--baseline_checkpoint", type=str, default=None)
     parser.add_argument("--clear_cache", action="store_true")
-    parser.add_argument("--seed", type=int, default=42, help="Random seed")
-    parser.add_argument(
-        "--save_model_path", type=str,
-        default="/content/drive/MyDrive/parkinson_tri_modal_97_44_best.joblib",
-    )
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--save_model_path", type=str, default=None)
     args = parser.parse_args()
 
     data_path = Path(args.data_dir)
-    loader = MdvrDatasetLoader(data_path)
-    task_type = SpeechTaskType.from_string(args.task)
+    loader = ArchiveVoiceDatasetLoader(data_path) if args.dataset == "voice_dataset" else MdvrDatasetLoader(data_path)
+    task_type = SpeechTaskType.from_string(args.task) if args.dataset == "mdvr" else None
     samples = loader.load_samples(target_task_type=task_type)
-    print(f"Loaded {len(samples)} samples for task {task_type.name} from {data_path}")
+    print(f"Loaded {len(samples)} samples for dataset {args.dataset} from {data_path}")
     if not samples:
         return print("No samples found! Please verify the dataset directory path.")
 
-    strategy = _build_strategy(args.eval_strategy, args.seed)
-    metrics = _dispatch_experiment(args, samples, strategy)
-    print(f"\n===== FINAL RESULTS ({args.eval_strategy.upper()}) =====\n{metrics.format_summary()}\n" + "=" * 55 + "\n")
+    cache_dir = Path(f"./data/processed/{args.dataset}/segments")
+    strategy = SubjectSplitValidationStrategy(random_seed=args.seed) if args.eval_strategy == "split" else LeaveOneSubjectOutStrategy()
+    metrics = _dispatch_experiment(args, samples, strategy, cache_dir)
+    print(f"\n===== FINAL RESULTS ({args.eval_strategy.upper()}) =====\n{metrics.format_summary()}\n" + "=" * 55)
 
 
-def _build_strategy(eval_strategy: str, seed: int = 42):
-    """Construct the appropriate validation strategy from CLI argument."""
-    return SubjectSplitValidationStrategy(random_seed=seed) if eval_strategy == "split" else LeaveOneSubjectOutStrategy()
-
-
-def _dispatch_experiment(args, samples, strategy):
+def _dispatch_experiment(args, samples, strategy, cache_dir: Path):
     """Route to the correct pipeline based on experiment type."""
     save_path = Path(args.save_model_path) if args.save_model_path else None
     if args.experiment == "tri_modal":
         w = tuple(float(x.strip()) for x in args.tri_weights.split(","))
         return TriModalEnsembleEvaluationPipeline(
             weights=w, baseline_checkpoint=args.baseline_checkpoint,
-            threshold=args.decision_threshold, validation_strategy=strategy,
-            output_model_path=save_path,
+            threshold=args.decision_threshold, cache_directory=cache_dir,
+            validation_strategy=strategy, output_model_path=save_path,
         ).run(samples)
     if args.experiment == "baseline":
         return BaselineReplicationPipeline(
-            Path("./data/processed/segments"), strategy, args.clear_cache, save_path,
-        ).run(samples, use_segmentation=True)
+            cache_dir, strategy, args.clear_cache, save_path,
+        ).run(samples, use_segmentation=(args.dataset == "mdvr"))
     layer = args.layer_index if args.layer_index != 0 else None
     return SelfSupervisedEvaluationPipeline(
-        args.model_name, layer, validation_strategy=strategy, output_model_path=save_path,
+        args.model_name, layer, segmentation_cache_directory=cache_dir,
+        validation_strategy=strategy, output_model_path=save_path,
     ).run(samples)
 
 
